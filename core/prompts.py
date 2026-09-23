@@ -1,45 +1,44 @@
-"""提示词文件管理（prompts/ 目录）。"""
+"""全局提示词模板管理（prompts/ 目录）。
+
+任务自带的提示词存在任务库的 prompt_files 表里（随任务走），
+这里的模板只用于「新建任务时选一份」与「把改好的提示词另存为模板」。
+"""
 
 from __future__ import annotations
 
 import time
 from pathlib import Path
 
-DEFAULT_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
+PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
+BUILTIN_TEMPLATES = ("reflect.md", "custom_prompt.md")
 
 
-def prompts_dir(root: str | Path | None = None) -> Path:
-    return Path(root) if root else DEFAULT_PROMPTS_DIR
-
-
-def list_prompt_files(root: str | Path | None = None) -> list[str]:
-    d = prompts_dir(root)
-    if not d.exists():
+def list_prompt_files() -> list[str]:
+    if not PROMPTS_DIR.exists():
         return []
-    return sorted(p.name for p in d.glob("*.md") if p.is_file())
+    return sorted(p.name for p in PROMPTS_DIR.glob("*.md") if p.is_file())
 
 
-def read_prompt(name: str, root: str | Path | None = None) -> str:
-    return (prompts_dir(root) / name).read_text(encoding="utf-8")
+def read_prompt(name: str) -> str:
+    return (PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
-def write_prompt(
-    name: str, content: str, root: str | Path | None = None
-) -> Path:
-    d = prompts_dir(root)
-    d.mkdir(parents=True, exist_ok=True)
-    p = d / name
+def write_prompt(name: str, content: str) -> Path:
+    PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+    p = PROMPTS_DIR / name
     p.write_text(content, encoding="utf-8", newline="\n")
     return p
 
 
-def delete_prompt(name: str, root: str | Path | None = None) -> bool:
-    """删除模板：移进 prompts/.trash（而不是硬删除，误删可找回）。"""
-    d = prompts_dir(root)
-    p = d / name
+def delete_prompt(name: str) -> bool:
+    """删除模板：移进 prompts/.trash（而不是硬删除，误删可找回）。
+
+    内置的两个模板由调用方拦截，这里只管搬移。
+    """
+    p = PROMPTS_DIR / name
     if not p.exists():
         return False
-    trash = d / ".trash"
+    trash = PROMPTS_DIR / ".trash"
     trash.mkdir(parents=True, exist_ok=True)
     target = trash / name
     if target.exists():

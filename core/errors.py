@@ -35,11 +35,6 @@ class ClassifiedError:
     quota_value: str | None = None
 
     @property
-    def punishes_key(self) -> bool:
-        """是否需要惩罚（冷却）这个 Key。503 属于服务端抖动，不算 Key 的锅。"""
-        return self.kind in (ErrorKind.RATE_LIMIT, ErrorKind.QUOTA_DAILY)
-
-    @property
     def disables_key(self) -> bool:
         """是否直接禁用这个 Key。
 

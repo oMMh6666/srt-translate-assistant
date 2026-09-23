@@ -5,17 +5,19 @@
 - 429 日配额耗尽 -> 冷却到次日零点
 - 429 分钟级限流 -> 冷却 retryDelay 秒
 - 503 瞬时抖动   -> 不冷却（History.md：503 是服务端问题，不是 Key 的问题）
+
+「禁用」与「冷却」是两回事：
+- 冷却到点自动恢复，调度时跳过
+- 禁用（429 带 quotaValue，额度真的用完）必须用户在 Key 管理里手动启用
 """
 
 from __future__ import annotations
 
-import sqlite3
-import threading
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from core import db
 from core.errors import next_local_midnight
 
 DEFAULT_DB = Path(__file__).resolve().parents[1] / "api_keys" / "api_keys.db"
@@ -25,8 +27,14 @@ def _iso(dt: datetime | None = None) -> str:
     return (dt or datetime.now()).isoformat(timespec="seconds")
 
 
-@dataclass
+def mask_key(key: str) -> str:
+    return f"{key[:8]}...{key[-4:]}" if key and len(key) > 12 else (key or "N/A")
+
+
+@dataclass(frozen=True)
 class KeyRecord:
+    """一次取用拿到的 Key（只带调度需要的最小信息）。"""
+
     id: int
     api_key: str
     project_name: str
@@ -36,25 +44,10 @@ class KeyPool:
     def __init__(self, db_path: str | Path | None = None):
         self.db_path = Path(db_path or DEFAULT_DB)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
         self._init_db()
 
-    @contextmanager
-    def _conn(self):
-        """一次性连接，用完即关（连接泄漏会把 db 文件锁死在 Windows 上）。"""
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA journal_mode=WAL;")
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-
     def _init_db(self) -> None:
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS api_keys (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +73,7 @@ class KeyPool:
                 )
             conn.commit()
 
-    # ------------------------------------------------------------- 写入
+    # ------------------------------------------------------------- 增删改
     def add_keys(self, pairs: list[tuple[str, str]]) -> None:
         valid = [
             (k.strip(), p.strip())
@@ -89,7 +82,7 @@ class KeyPool:
         ]
         if not valid:
             return
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             conn.executemany(
                 "INSERT OR IGNORE INTO api_keys (api_key, project_name) VALUES (?, ?)",
                 valid,
@@ -97,7 +90,7 @@ class KeyPool:
             conn.commit()
 
     def update_key(self, key_id: int, api_key: str, project_name: str) -> bool:
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             cur = conn.execute(
                 "UPDATE api_keys SET api_key=?, project_name=? WHERE id=?",
                 (api_key.strip(), project_name.strip(), key_id),
@@ -106,23 +99,17 @@ class KeyPool:
             return cur.rowcount > 0
 
     def delete_key(self, key_id: int) -> bool:
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             cur = conn.execute("DELETE FROM api_keys WHERE id=?", (key_id,))
             conn.commit()
             return cur.rowcount > 0
 
     def disable(self, key_id: int) -> None:
-        with self._lock, self._conn() as conn:
-            conn.execute("UPDATE api_keys SET is_active=0 WHERE id=?", (key_id,))
-            conn.commit()
+        """停用一个 Key（手动禁用，或 429 带 quotaValue 判定额度耗尽）。
 
-    def mark_disabled(self, key_id: int) -> None:
-        """429 且返回体带 quotaValue：额度真的用完了 -> 直接停用。
-
-        注意这不是「冷却」：冷却到点会自动恢复，禁用必须用户在 Key 管理里
-        手动启用（或换日配额重置后自行启用），否则会一直空转重试。
+        同时清掉冷却时间：额度耗尽不是「等一会儿就好」，留着冷却只会让人误以为会自动恢复。
         """
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE api_keys SET is_active = 0, cooldown_until = NULL WHERE id = ?",
                 (key_id,),
@@ -130,7 +117,7 @@ class KeyPool:
             conn.commit()
 
     def enable(self, key_id: int) -> None:
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE api_keys SET is_active=1, fail_count=0, cooldown_until=NULL "
                 "WHERE id=?",
@@ -138,11 +125,22 @@ class KeyPool:
             )
             conn.commit()
 
+    def reset_usage(self, ids: list[int] | None = None) -> None:
+        with db.connect(self.db_path) as conn:
+            if ids:
+                conn.executemany(
+                    "UPDATE api_keys SET usage_count = 0 WHERE id = ?",
+                    [(int(i),) for i in ids],
+                )
+            else:
+                conn.execute("UPDATE api_keys SET usage_count = 0")
+            conn.commit()
+
     # ------------------------------------------------------------- 取用
     def acquire(self, now: datetime | None = None) -> KeyRecord | None:
         """取一个当前可用的 Key（未禁用且不在冷却中），并把使用计数 +1。"""
         now_iso = _iso(now)
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             row = conn.execute(
                 """
                 SELECT id, api_key, project_name FROM api_keys
@@ -163,7 +161,7 @@ class KeyPool:
         return KeyRecord(id=row[0], api_key=row[1], project_name=row[2])
 
     def available_count(self, now: datetime | None = None) -> int:
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             return conn.execute(
                 """
                 SELECT COUNT(*) FROM api_keys
@@ -175,7 +173,7 @@ class KeyPool:
 
     # --------------------------------------------------------- 结果反馈
     def mark_ok(self, key_id: int) -> None:
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE api_keys SET fail_count = 0, cooldown_until = NULL WHERE id = ?",
                 (key_id,),
@@ -183,14 +181,14 @@ class KeyPool:
             conn.commit()
 
     def mark_transient(self, key_id: int) -> None:
-        """503 等服务侧抖动：不冷却、不记失败。"""
+        """503 等服务侧抖动：不冷却、不记失败（不是这个 Key 的锅）。"""
         return None
 
     def mark_rate_limit(
         self, key_id: int, seconds: float, now: datetime | None = None
     ) -> None:
         until = (now or datetime.now()).timestamp() + max(seconds, 1.0)
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE api_keys SET cooldown_until = ?, fail_count = fail_count + 1 "
                 "WHERE id = ?",
@@ -200,7 +198,7 @@ class KeyPool:
 
     def mark_quota_exhausted(self, key_id: int, now: datetime | None = None) -> None:
         until = next_local_midnight(now)
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE api_keys SET cooldown_until = ?, fail_count = fail_count + 1 "
                 "WHERE id = ?",
@@ -208,45 +206,9 @@ class KeyPool:
             )
             conn.commit()
 
-    def clear_cooldowns(self, ids: list[int] | None = None) -> None:
-        with self._lock, self._conn() as conn:
-            if ids:
-                conn.executemany(
-                    "UPDATE api_keys SET cooldown_until = NULL, fail_count = 0 WHERE id = ?",
-                    [(int(i),) for i in ids],
-                )
-            else:
-                conn.execute("UPDATE api_keys SET cooldown_until = NULL, fail_count = 0")
-            conn.commit()
-
-    def reset_usage_counts(self, ids: list[int] | None = None) -> None:
-        with self._lock, self._conn() as conn:
-            if ids:
-                conn.executemany(
-                    "UPDATE api_keys SET usage_count = 0 WHERE id = ?",
-                    [(int(i),) for i in ids],
-                )
-            else:
-                conn.execute("UPDATE api_keys SET usage_count = 0")
-            conn.commit()
-
     # ------------------------------------------------------------- 查询
-    def usage_count(self, key_id: int) -> int:
-        with self._lock, self._conn() as conn:
-            row = conn.execute(
-                "SELECT usage_count FROM api_keys WHERE id = ?", (key_id,)
-            ).fetchone()
-        return row[0] if row else 0
-
-    def fail_count(self, key_id: int) -> int:
-        with self._lock, self._conn() as conn:
-            row = conn.execute(
-                "SELECT fail_count FROM api_keys WHERE id = ?", (key_id,)
-            ).fetchone()
-        return (row[0] if row else 0) or 0
-
     def list_keys(self) -> list[dict]:
-        with self._lock, self._conn() as conn:
+        with db.connect(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT id, api_key, project_name, usage_count, is_active,
@@ -261,9 +223,7 @@ class KeyPool:
                 {
                     "id": r[0],
                     "api_key": r[1],
-                    "api_key_masked": (
-                        f"{r[1][:8]}...{r[1][-4:]}" if len(r[1]) > 12 else r[1]
-                    ),
+                    "api_key_masked": mask_key(r[1]),
                     "project_name": r[2],
                     "usage_count": r[3],
                     "is_active": bool(r[4]),

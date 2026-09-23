@@ -10,9 +10,9 @@
 
 from __future__ import annotations
 
-DEFAULT_MODEL = "gemini-3.5-flash-lite"
-
 # OFF 表示完全不发送 thinking_config（某些模型不接受该参数时的安全兜底）
+THINKING_OFF = "OFF"
+
 _MODEL_THINKING: dict[str, dict] = {
     "gemini-3.5-flash-lite": {
         "levels": ["OFF", "MINIMAL", "LOW", "MEDIUM", "HIGH"],
@@ -36,6 +36,7 @@ _MODEL_THINKING: dict[str, dict] = {
     },
 }
 
+# 未知模型（用户手填 / 新模型）：给全量等级，默认 OFF 最稳
 _FALLBACK_THINKING = {
     "levels": ["OFF", "MINIMAL", "LOW", "MEDIUM", "HIGH"],
     "default": "OFF",
@@ -44,14 +45,18 @@ _FALLBACK_THINKING = {
 KNOWN_MODELS = list(_MODEL_THINKING.keys())
 
 
+def _spec(model: str) -> dict:
+    return _MODEL_THINKING.get(model, _FALLBACK_THINKING)
+
+
 def thinking_levels_for(model: str) -> list[str]:
     """该模型合法的思考等级列表。"""
-    return _MODEL_THINKING.get(model, _FALLBACK_THINKING)["levels"]
+    return _spec(model)["levels"]
 
 
 def default_thinking_level(model: str) -> str:
     """该模型的默认思考等级。"""
-    return _MODEL_THINKING.get(model, _FALLBACK_THINKING)["default"]
+    return _spec(model)["default"]
 
 
 def normalize_thinking_level(model: str, level: str | None) -> str:
@@ -64,6 +69,6 @@ def normalize_thinking_level(model: str, level: str | None) -> str:
     return default_thinking_level(model)
 
 
-def needs_thinking_config(level: str) -> bool:
-    """OFF 表示不发送 thinking_config。"""
-    return bool(level) and str(level).upper() != "OFF"
+def needs_thinking_config(level: str | None) -> bool:
+    """OFF = 不发送 thinking_config。"""
+    return bool(level) and str(level).upper() != THINKING_OFF

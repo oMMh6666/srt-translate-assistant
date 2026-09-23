@@ -1,20 +1,13 @@
 """全局默认配置（唯一来源）。
 
-以前这里还会试图从外部配置文件读一份覆盖值，实际上项目根本没用过那个文件，
-配置全部以下面的 DEFAULT_CONFIG 为准 —— 要改默认值直接改本文件即可。
+要改默认值直接改本文件 —— 项目不读任何外部配置文件。
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-
 PORT = 8777
-SRT_DEFAULT_DIR = r"C:\Gemini"
 
 DEFAULT_CONFIG: dict = {
-    "ENGINE": "gemini",
     "MODEL_NAME": "gemini-3.5-flash-lite",
     "TEMPERATURE": 0.7,
     "TOP_P": 0.95,

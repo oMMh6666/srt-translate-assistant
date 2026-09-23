@@ -1,4 +1,10 @@
-"""SRT 解析与产物导出（纯函数层，无外部依赖）。"""
+"""SRT 解析与产物导出（纯函数层，无外部依赖）。
+
+分三段：
+- 解析：文本 / 文件 -> 逐条字幕
+- 时间：SRT 时间戳 <-> ASS 时间戳
+- 导出：字幕 + 译文 -> .srt / 双语 .ass（字幕已内嵌任务库，不读外部文件）
+"""
 
 from __future__ import annotations
 
@@ -29,6 +35,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
+# ------------------------------------------------------------------ 解析
+
+
 def _read_text(file_path: str | Path) -> str:
     """
     按字节读取再解码，避免 Windows 文本模式把 \\r\\n 二次转义成 \\r\\r\\n，
@@ -41,7 +50,7 @@ def _read_text(file_path: str | Path) -> str:
 
 
 def parse_srt_text(content: str) -> list[dict]:
-    """解析 SRT 文本（不依赖文件是否存在，供 log 内嵌字幕使用）。"""
+    """解析 SRT 文本 -> [{'id': int, 'time': str, 'text': str}, ...]"""
     content = re.sub(r"\r+\n", "\n", content).replace("\r", "\n")
 
     subs: list[dict] = []
@@ -61,6 +70,9 @@ def parse_srt(file_path: str | Path) -> list[dict]:
     return parse_srt_text(_read_text(file_path))
 
 
+# ------------------------------------------------------------------ 时间
+
+
 def srt_time_to_ass(time_str: str) -> str:
     """SRT 时间戳 00:00:00,490 -> ASS 时间戳 0:00:00.49"""
     normalized = str(time_str).strip().replace(",", ".")
@@ -70,6 +82,17 @@ def srt_time_to_ass(time_str: str) -> str:
 
     h, m, s, ms = match.groups()
     return f"{int(h)}:{m}:{s}.{(ms + '00')[:2]}"
+
+
+def _split_time(time_str: str) -> tuple[str, str]:
+    """SRT 时间轴 '00:00:01,000 --> 00:00:03,000' -> (start_ass, end_ass)"""
+    parts = [p.strip() for p in str(time_str).split("-->")]
+    if len(parts) != 2:
+        return "0:00:00.00", "0:00:00.00"
+    return srt_time_to_ass(parts[0]), srt_time_to_ass(parts[1])
+
+
+# ------------------------------------------------------------------ 导出
 
 
 def write_srt(
@@ -93,46 +116,37 @@ def write_srt(
     return missing
 
 
-def _parse_srt_blocks(file_path: str | Path) -> dict[str, dict]:
-    """按块解析 -> {'1': {'start': ..., 'end': ..., 'text': ...}}"""
-    return parse_blocks_text(_read_text(file_path))
-
-
-def parse_blocks_text(content: str) -> dict[str, dict]:
-    """按块解析 SRT 文本 -> {'1': {'start': ..., 'end': ..., 'text': ...}}"""
-    data: dict[str, dict] = {}
-    for block in re.split(r"\n\s*\n", content.strip()):
-        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
-        if len(lines) < 3 or not lines[0].isdigit():
-            continue
-
-        time_match = re.search(
-            r"(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})",
-            lines[1],
-        )
-        if not time_match:
-            continue
-
-        data[lines[0]] = {
-            "start": srt_time_to_ass(time_match.group(1)),
-            "end": srt_time_to_ass(time_match.group(2)),
-            "text": " ".join(lines[2:]),
-        }
-    return data
-
-
 def _ass_escape(text: str) -> str:
     return str(text).replace("\n", "\\N").replace("\r", "")
 
 
-def build_ass(orig_srt_path: str | Path, trans_srt_path: str | Path) -> str:
-    """合成双语 ASS 内容（英文在上、中文在下，沿用原时间轴）。"""
-    orig = _parse_srt_blocks(orig_srt_path)
-    trans = _parse_srt_blocks(trans_srt_path)
-    return build_ass_from_blocks(orig, trans)
+def blocks_from_subtitles(
+    subtitles: list[dict], translations: dict[str, str] | None = None
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    """由内存中的字幕列表直接构造双语 ASS 所需的原文块 / 译文块。
+
+    字幕已内嵌进任务库，导出时不必依赖外部 srt 文件。
+    """
+    translations = translations or {}
+    orig: dict[str, dict] = {}
+    trans: dict[str, dict] = {}
+
+    for sub in subtitles:
+        sid = str(sub["id"])
+        start, end = _split_time(sub["time"])
+        text = " ".join(str(sub["text"]).splitlines())
+        orig[sid] = {"start": start, "end": end, "text": text}
+
+        value = translations.get(sid)
+        if value is None or not str(value).strip():
+            value = text
+        trans[sid] = {"start": start, "end": end, "text": " ".join(str(value).splitlines())}
+
+    return orig, trans
 
 
 def build_ass_from_blocks(orig: dict[str, dict], trans: dict[str, dict]) -> str:
+    """合成双语 ASS 内容（英文在上、中文在下，沿用原时间轴）。"""
     dialogues: list[str] = []
     for idx in sorted(orig, key=lambda x: int(x)):
         item = orig[idx]
@@ -149,18 +163,6 @@ def build_ass_from_blocks(orig: dict[str, dict], trans: dict[str, dict]) -> str:
     return ASS_HEADER + "\n".join(dialogues) + "\n"
 
 
-def write_ass(
-    orig_srt_path: str | Path,
-    trans_srt_path: str | Path,
-    output_ass_path: str | Path,
-) -> Path:
-    return write_ass_from_blocks(
-        _parse_srt_blocks(orig_srt_path),
-        _parse_srt_blocks(trans_srt_path),
-        output_ass_path,
-    )
-
-
 def write_ass_from_blocks(
     orig: dict[str, dict],
     trans: dict[str, dict],
@@ -170,37 +172,3 @@ def write_ass_from_blocks(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(build_ass_from_blocks(orig, trans), encoding="utf-8")
     return out
-
-
-def blocks_from_subtitles(
-    subtitles: list[dict], translations: dict[str, str] | None = None
-) -> tuple[dict[str, dict], dict[str, dict]]:
-    """由内存中的字幕列表直接构造双语 ASS 所需的原文块 / 译文块。
-
-    字幕已内嵌进任务库，导出时不必依赖外部 srt 文件。
-    """
-    translations = translations or {}
-    orig: dict[str, dict] = {}
-    trans: dict[str, dict] = {}
-
-    for sub in subtitles:
-        sid = str(sub["id"])
-        start, _, end = _split_time(sub["time"])
-        text = " ".join(str(sub["text"]).splitlines())
-        orig[sid] = {"start": start, "end": end, "text": text}
-
-        value = translations.get(sid)
-        if value is None or not str(value).strip():
-            value = text
-        trans[sid] = {"start": start, "end": end, "text": " ".join(str(value).splitlines())}
-
-    return orig, trans
-
-
-def _split_time(time_str: str) -> tuple[str, str, str]:
-    """SRT 时间轴 '00:00:01,000 --> 00:00:03,000' -> (start_ass, '-->', end_ass)"""
-    raw = str(time_str)
-    parts = [p.strip() for p in raw.split("-->")]
-    if len(parts) != 2:
-        return "0:00:00.00", "-->", "0:00:00.00"
-    return srt_time_to_ass(parts[0]), "-->", srt_time_to_ass(parts[1])
