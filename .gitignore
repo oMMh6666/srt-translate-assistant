@@ -40,3 +40,6 @@ __pycache__/
 .pytest_cache/
 .vscode/
 *.log
+
+# --- 会话记忆（本地状态，不进仓库） ---
+.workbuddy/
