@@ -1,0 +1,354 @@
+:root {
+  --bg: #14161a;
+  --panel: #1b1e24;
+  --panel2: #21252d;
+  --border: #2a2f39;
+  --text: #e6e9ef;
+  --muted: #8b93a7;
+  --accent: #4f8cff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --err: #f85149;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.6 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  display: grid;
+  /* minmax(0, 1fr)：不加 minmax 时中间行的 min-height 默认为 auto，
+     内容一多就会把行撑高、把日志面板挤出视口，滚动条也就没了。
+     第 3 行是日志区上方的横向分隔条，高度由 --log-h 记忆（双击复位 200px） */
+  grid-template-rows: 48px minmax(0, 1fr) 5px var(--log-h, 200px);
+  height: 100vh;
+  overflow: hidden;
+}
+
+button {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 开始 / 继续：不同颜色 + 前置图标 */
+#btn-start.start {
+  background: #1d4429; border-color: var(--ok); color: var(--ok); font-weight: 600;
+}
+#btn-start.resume {
+  background: #1c2f55; border-color: var(--accent); color: #9dc0ff; font-weight: 600;
+}
+
+input, select, textarea {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  width: 100%;
+}
+textarea { resize: vertical; font-family: Consolas, monospace; font-size: 12px; }
+
+/* 顶栏 */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-size: 15px; font-weight: 600; }
+.keystat { color: var(--muted); font-size: 12px; }
+.tabs { display: flex; gap: 6px; margin-left: auto; }
+
+/* 页签选中态：顶栏三个大页签和任务详情的四个子页签共用一套记号
+   —— 蓝边 + 蓝字 + 加粗，底下再压一道蓝线，扫一眼就知道停在哪个页签 */
+.tabs button,
+.subtabs button { color: var(--muted); }
+.tabs button:hover,
+.subtabs button:hover { color: var(--text); border-color: var(--accent); }
+.tabs button.active,
+.subtabs button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.subtabs button.active {
+  background: #1c2f55;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* 主体
+   第二列是分隔条：宽度由 JS 拖动写进 --side-w（默认 280px，双击复位） */
+.view { display: none; overflow: hidden; min-height: 0; }
+.view.active {
+  display: grid;
+  grid-template-columns: var(--side-w, 280px) 5px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.splitter {
+  cursor: col-resize;
+  background: var(--border);
+  transition: background .12s ease;
+}
+.splitter:hover, .splitter.active { background: var(--accent); }
+.splitter.horiz { cursor: row-resize; }
+/* 拖动过程中锁定光标与选中，否则划过文本会选上一大片 */
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing * { cursor: col-resize !important; }
+body.resizing-v { cursor: row-resize; user-select: none; }
+body.resizing-v * { cursor: row-resize !important; }
+
+.sidebar {
+  background: var(--panel); border-right: 1px solid var(--border);
+  overflow-y: auto; min-height: 0;
+}
+.side-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 600;
+}
+#joblist, #tpllist { list-style: none; margin: 0; padding: 6px; }
+#joblist li, #tpllist li {
+  padding: 8px 10px; border-radius: 6px; cursor: pointer; margin-bottom: 4px;
+}
+#joblist li:hover, #tpllist li:hover { background: var(--panel2); }
+#joblist li.active, #tpllist li.active { background: #24304a; }
+#joblist .jname, #tpllist .jname { font-size: 13px; }
+#joblist .jmeta, #tpllist .jmeta { font-size: 11px; color: var(--muted); }
+
+/* 任务状态底色：未开始 / 进行中 / 暂停中 / 已完成 / 部分完成 / 异常停止
+   类名由 app.js 按 JOB_STATUS 打进来（放在 hover 规则之后，因为两者特异性相同） */
+#joblist li { background-color: transparent; border-left: 3px solid transparent; }
+#joblist li.jst-idle  { background-color: rgba(139, 147, 167, .13); }
+#joblist li.jst-run   { background-color: rgba(79, 140, 255, .18); }
+#joblist li.jst-pause { background-color: rgba(210, 153, 34, .18); }
+#joblist li.jst-done  { background-color: rgba(63, 185, 80, .16); }
+#joblist li.jst-part  { background-color: rgba(86, 156, 214, .18); }
+#joblist li.jst-bad   { background-color: rgba(248, 81, 73, .18); }
+#joblist li:hover { filter: brightness(1.35); }
+/* 当前选中：左侧强调条（不再抢背景色，状态底色才看得出来） */
+#joblist li.active { box-shadow: inset 3px 0 0 var(--accent); }
+#joblist .jst {
+  display: inline-block; min-width: 52px; padding: 0 5px; margin-right: 6px;
+  border-radius: 4px; font-size: 11px; text-align: center;
+  background: rgba(0, 0, 0, .28);
+}
+#joblist li.jst-run .jst   { color: #9dc0ff; }
+#joblist li.jst-pause .jst { color: #e3b341; }
+#joblist li.jst-done .jst  { color: #7ee787; }
+#joblist li.jst-part .jst  { color: #79c0ff; }
+#joblist li.jst-bad .jst   { color: #ff9c96; }
+#joblist li.jst-idle .jst  { color: var(--muted); }
+
+/* 任务行：左边信息 + 右边单个删除按钮 */
+#joblist li { display: flex; align-items: center; gap: 6px; }
+#joblist .jbody { flex: 1 1 auto; min-width: 0; }
+#joblist .jname, #joblist .jmeta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#joblist .jdel {
+  flex: 0 0 auto; padding: 2px 6px; font-size: 12px; line-height: 1.4;
+  background: transparent; color: var(--muted);
+  border: 1px solid transparent; border-radius: 4px; cursor: pointer;
+}
+#joblist li:hover .jdel { color: var(--text); border-color: var(--border); }
+#joblist .jdel:hover { color: var(--err); border-color: var(--err); background: rgba(248, 81, 73, .12); }
+
+.content {
+  overflow: hidden; display: flex; flex-direction: column;
+  min-height: 0; min-width: 0;
+}
+.empty { padding: 40px; color: var(--muted); }
+
+/* 任务详情是可滚动区的直接父级，必须是 flex 容器且 min-height:0，
+   否则里面的 .tabpane 会被内容顶高、撑破整个布局（滚动条消失、内容被压住） */
+#job-detail {
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+}
+
+.job-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 12px 16px; flex: 0 0 auto;
+}
+.job-name { font-size: 15px; font-weight: 600; }
+.job-sub { font-size: 12px; color: var(--muted); }
+.job-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.progress { display: flex; align-items: center; gap: 10px; padding: 0 16px 12px; flex: 0 0 auto; }
+.progress .track { flex: 1; height: 8px; background: var(--panel2); border-radius: 4px; overflow: hidden; }
+.progress .bar { height: 100%; width: 0; background: var(--ok); transition: width .3s; }
+#progtxt { font-size: 12px; color: var(--muted); min-width: 150px; }
+
+.subtabs { display: flex; gap: 6px; padding: 0 16px 8px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+/* min-height:0 是关键：flex 子项默认 min-height:auto，会被内容撑开而不出滚动条 */
+.tabpane { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 16px; }
+.tabpane::-webkit-scrollbar { width: 12px; }
+.tabpane::-webkit-scrollbar-thumb { background: #39404d; border-radius: 6px; border: 3px solid var(--panel); }
+.tabpane::-webkit-scrollbar-track { background: transparent; }
+
+/* 字幕对照面板去掉上内边距，让表头紧贴上面的 3 个功能页签，
+   否则滚动时行会跑到表头上方的空隙里 */
+#tab-pairs.tabpane {
+  padding: 0 16px 12px;
+  overflow-anchor: none;  /* 关掉滚动锚定，滚动位置由我们自己算 */
+}
+
+/* ------------------------------------------- 翻译记录（api_logs 只读浏览器）
+   整格不滚动：上=清单（自己滚），下=选中那条的正文（自己滚） */
+#tab-apilogs.tabpane { padding: 0; overflow: hidden; }
+.alogs-wrap {
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+}
+.alogs-top { flex: 1 1 45%; min-height: 0; display: flex; flex-direction: column; }
+.alogs-mid { flex: 0 0 1px; background: var(--border); }
+.alogs-bot { flex: 1 1 55%; min-height: 0; display: flex; flex-direction: column; }
+
+.alogs-bar, .ld-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; flex: 0 0 auto;
+  font-size: 12px; color: var(--muted);
+}
+.ld-bar { border-bottom: 1px solid var(--border); }
+.alogs-bar .spacer, .ld-bar .spacer { flex: 1 1 auto; }
+.subtabs .sub-spacer { margin-left: auto; display: inline-flex; align-items: center; }
+.chk {
+  display: inline-flex; align-items: center; gap: 4px;
+  cursor: pointer; user-select: none; color: var(--muted); font-size: 12px;
+}
+.chk input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+.chk:hover { color: var(--text); }
+
+/* 刚翻完的一批：短暂点亮一下，滚过去时一眼能认出来 */
+#pairs-body tr.flash td { animation: flashfade 1.8s ease-out; }
+@keyframes flashfade {
+  from { background: #2b4a2f; }
+  to   { background: transparent; }
+}
+
+.alogs-table { flex: 1 1 auto; min-height: 0; overflow: auto; }
+table.apilogs th { position: sticky; top: 0; }
+table.apilogs td { white-space: nowrap; }
+table.apilogs tr { cursor: pointer; }
+table.apilogs tr:hover td { background: var(--panel2); }
+table.apilogs tr.sel td { background: #24304a; }
+table.apilogs td.len { text-align: right; font-family: Consolas, monospace; }
+table.apilogs tr.st-OK .badge { color: var(--ok); }
+table.apilogs tr.st-ERROR .badge,
+table.apilogs tr.st-FATAL .badge { color: var(--err); }
+table.apilogs tr.st-FALLBACK .badge { color: var(--warn); }
+table.apilogs .badge { font-weight: 600; }
+
+.ld-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 12px; padding: 12px 16px; }
+.ld-block { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; }
+.ld-block label { font-size: 12px; color: var(--muted); margin-bottom: 4px; flex: 0 0 auto; }
+.ld-block textarea {
+  flex: 1 1 auto; min-height: 0; resize: none;
+  background: #101318; font-size: 12px; line-height: 1.5; white-space: pre;
+}
+
+/* 字幕对照表
+   border-collapse: collapse 会让 position:sticky 的 th 失效（Chrome 的已知行为），
+   所以改成 separate + 自己画分隔线 */
+table.pairs { width: 100%; border-collapse: separate; border-spacing: 0; }
+table.pairs th {
+  position: sticky; top: 0; z-index: 2; background: var(--panel); text-align: left;
+  padding: 8px; font-size: 12px; color: var(--muted);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+table.pairs td { padding: 6px 8px; border-bottom: 1px solid #232830; vertical-align: top; }
+table.pairs td.idx { color: var(--muted); width: 50px; }
+table.pairs td.time { color: var(--muted); width: 110px; font-size: 11px; }
+table.pairs tr.st-pending td.trans { color: var(--muted); }
+table.pairs tr.st-FALLBACK td.trans { color: var(--warn); }
+
+/* 表单 */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.prompt-block { margin-bottom: 14px; }
+.prompt-block .ph { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 4px; }
+.prompt-block .ph label { margin-bottom: 0; }
+.prompt-block .ph-actions { display: flex; align-items: center; gap: 6px; }
+.prompt-block .ph-actions select { width: 180px; }
+.prompt-block textarea { min-height: 120px; }
+
+.hint-box {
+  margin-top: 14px; padding: 10px 12px; border-radius: 6px;
+  background: var(--panel2); border: 1px solid var(--border);
+  font-size: 12px; line-height: 1.7; color: var(--muted);
+}
+.hint-box b { color: var(--text); }
+
+/* 日志 */
+/* 日志面板同样需要 min-height:0，否则会被上方内容挤掉 */
+.logpanel {
+  border-top: 1px solid var(--border); background: var(--panel);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.log-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 16px; font-size: 12px; color: var(--muted); flex: 0 0 auto; }
+#logs { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 16px 10px; font-family: Consolas, monospace; font-size: 12px; }
+#logs div { padding: 1px 0; }
+.lv-error { color: var(--err); }
+.lv-warn { color: var(--warn); }
+.lv-ok { color: var(--ok); }
+.lv-info { color: var(--muted); }
+
+/* 弹窗 */
+.modal {
+  position: absolute; inset: 0; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.modal[hidden] { display: none; }
+.modal-box {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  width: 640px; max-width: 92vw; max-height: 84vh; display: flex; flex-direction: column;
+}
+.modal-head { display: flex; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600; }
+.modal-body { padding: 16px; overflow: auto; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+
+input[type="file"] { padding: 6px; }
+
+/* ------------------------------------------------------- API Key 管理 */
+.keypane {
+  padding: 0; overflow: hidden; display: flex; flex-direction: column;
+  min-height: 0; min-width: 0;
+}
+.keypane .pairs-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.keypane table.pairs th { position: sticky; top: 0; }
+
+.key-toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 16px; flex: 0 0 auto; border-bottom: 1px solid var(--border);
+}
+.key-toolbar .spacer { flex: 1 1 auto; }
+.key-toolbar .selall {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; cursor: pointer; user-select: none;
+}
+.key-toolbar .selall input, table.pairs input[type="checkbox"] {
+  width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer;
+}
+#key-selcount { font-size: 12px; color: var(--muted); }
+#key-selcount.has-sel { color: var(--accent); }
+button.danger { border-color: #5b2b2b; color: #ff9c96; }
+button.danger:hover { border-color: var(--err); }
+
+table.pairs th.ck, table.pairs td:first-child { width: 42px; text-align: center; }
+table.pairs td.mono { font-family: Consolas, monospace; font-size: 12px; }
+table.pairs tr.editing td, table.pairs tr.draft td { background: #1f2634; }
+input.k-in { padding: 4px 6px; font-size: 12px; }
+input.k-in.wide { font-family: Consolas, monospace; }
+.tag-on { color: var(--ok); }
+.tag-off { color: var(--muted); }

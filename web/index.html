@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>字幕翻译工作台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">字幕翻译工作台</div>
+  <div class="keystat" id="keystat">—</div>
+  <div class="keystat" id="runflag"></div>
+  <nav class="tabs" id="toptabs">
+    <button data-view="tasks" class="active">任务</button>
+    <button data-view="prompts">提示词管理</button>
+    <button data-view="keys">API Key 管理</button>
+  </nav>
+</header>
+
+<!-- ============================ 任务视图 ============================ -->
+<main class="view active" id="view-tasks">
+  <aside class="sidebar">
+    <div class="side-head"><span>任务列表</span><button id="btn-new">+ 新建</button></div>
+    <ul id="joblist"></ul>
+  </aside>
+  <div class="splitter" data-split="side" title="拖动调整左侧宽度（双击恢复默认 280px）"></div>
+  <section class="content">
+    <div class="empty" id="job-empty">从左侧选择一个任务，或点「+ 新建」</div>
+
+    <div id="job-detail" hidden>
+      <div class="job-head">
+        <div>
+          <div class="job-name" id="job-name"></div>
+          <div class="job-sub" id="job-sub"></div>
+        </div>
+        <div class="job-actions">
+          <button id="btn-start">开始</button>
+          <button id="btn-pause">暂停</button>
+          <button id="btn-dl-srt">下载 SRT</button>
+          <button id="btn-dl-ass">下载 ASS</button>
+        </div>
+      </div>
+
+      <div class="progress">
+        <div class="track"><div class="bar" id="bar"></div></div>
+        <span id="progtxt"></span>
+      </div>
+
+      <nav class="subtabs">
+        <button data-tab="pairs" class="active">字幕对照</button>
+        <button data-tab="params">运行参数</button>
+        <button data-tab="prompts">提示词</button>
+        <button data-tab="apilogs">翻译记录</button>
+        <span class="sub-spacer" id="pairs-follow-wrap" hidden>
+          <label class="chk" title="每完成一批翻译，自动滚动到该批第一条并短暂高亮">
+            <input type="checkbox" id="pairs-follow" checked>跟随最新批次
+          </label>
+        </span>
+      </nav>
+
+      <div class="tabpane" id="tab-pairs">
+        <table class="pairs">
+          <thead><tr><th>#</th><th>时间</th><th>原文</th><th>译文</th><th>批次</th></tr></thead>
+          <tbody id="pairs-body"></tbody>
+        </table>
+      </div>
+
+      <div class="tabpane" id="tab-params" hidden>
+        <div class="form-grid">
+          <div class="field"><label>引擎</label><select id="p-engine"></select></div>
+          <div class="field"><label>模型</label><select id="p-model"></select></div>
+          <div class="field"><label>翻译语言</label><input id="p-lang" list="lang-list"><datalist id="lang-list"></datalist></div>
+          <div class="field"><label>思考等级 thinking（随模型自动连动）</label><select id="p-thinking"></select></div>
+          <div class="field"><label>每批条数</label><input id="p-batch" type="number"></div>
+          <div class="field"><label>失败重试间隔（秒，指数退避上限 60）</label><input id="p-retrywait" type="number"></div>
+          <div class="field"><label>单次请求超时（秒，超时换 Key 重试）</label><input id="p-reqtimeout" type="number"></div>
+          <div class="field"><label>Temperature</label><input id="p-temp" type="number" step="0.1"></div>
+          <div class="field"><label>Top P</label><input id="p-topp" type="number" step="0.05"></div>
+          <div class="field"><label>Max output tokens</label><input id="p-maxtok" type="number"></div>
+        </div>
+        <div class="hint-box">
+          上下文策略固定为：<b>完整全部字幕（整体参考）+ 上一批次已翻译内容（最近参考）</b>。
+          批次未完成会一直重试到完成为止（没有最大重试上限）。
+          Key 失效只看一个硬信号：429 返回体里带 <b>quotaValue</b> 就自动禁用该 Key，不带则不会禁用。
+          当没有可用 Key 时任务自动停止，进度全部保留，补 Key 后点「继续」即可接着跑。
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label>原始字幕信息：</label>
+          <div class="job-sub" id="p-source-meta"></div>
+        </div>
+        <div style="margin-top:14px"><button class="primary" id="btn-save-params">保存参数</button></div>
+      </div>
+
+      <div class="tabpane" id="tab-prompts" hidden>
+        <div class="prompt-block">
+          <div class="ph">
+            <label>system_prompt 反思翻译主提示词（存于本任务 prompt_files 表）</label>
+            <div class="ph-actions">
+              <select id="load-reflect"></select>
+              <button id="btn-load-reflect">载入模板</button>
+              <button data-save-template="system_prompt">另存为模板</button>
+            </div>
+          </div>
+          <textarea id="t-reflect"></textarea>
+        </div>
+        <div class="prompt-block">
+          <div class="ph">
+            <label>customer_prompt 自定义样式 / 用语习惯（会嵌入上面的 ${custom_prompt}）</label>
+            <div class="ph-actions">
+              <select id="load-custom"></select>
+              <button id="btn-load-custom">载入模板</button>
+              <button data-save-template="customer_prompt">另存为模板</button>
+            </div>
+          </div>
+          <textarea id="t-custom"></textarea>
+        </div>
+        <button class="primary" id="btn-save-prompts">保存提示词到本任务</button>
+        <div class="hint-box" style="margin-top:12px">
+          两条提示词都是本任务的参数值，跟着 log 走 —— 换台机器打开这个 log 也能原样续跑，
+          不需要外部 md 文件。需要复用时点「另存为模板」存到 prompts/。
+        </div>
+      </div>
+
+      <!-- 翻译记录：上=api_logs 清单，下=选中那条的正文（只读，可复制） -->
+      <div class="tabpane" id="tab-apilogs" hidden>
+        <div class="alogs-wrap">
+          <div class="alogs-top">
+            <div class="alogs-bar">
+              <span id="alogs-count">—</span>
+              <span class="spacer"></span>
+              <label class="chk" title="任务运行中自动跳到最新一条并显示正文（手动点某一行会自动取消）">
+                <input type="checkbox" id="alog-follow" checked>跟随最新
+              </label>
+              <button id="btn-alogs-refresh">刷新</button>
+            </div>
+            <div class="alogs-table">
+              <table class="pairs apilogs">
+                <thead><tr>
+                  <th class="idx">#</th><th>时间</th><th class="idx">批次</th>
+                  <th>状态</th><th class="idx">Key</th><th>请求 / 响应</th>
+                </tr></thead>
+                <tbody id="alogs-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="alogs-mid"></div>
+          <div class="alogs-bot">
+            <div class="ld-bar">
+              <span id="alog-meta">选中上方任意一条记录即可查看正文</span>
+              <span class="spacer"></span>
+              <button id="btn-copy-req">复制请求</button>
+              <button id="btn-copy-resp">复制响应</button>
+            </div>
+            <div class="ld-body">
+              <div class="ld-block">
+                <label>request_payload（发出的完整请求）</label>
+                <textarea id="alog-req" readonly spellcheck="false" placeholder="—"></textarea>
+              </div>
+              <div class="ld-block">
+                <label>response_payload（收到的完整响应）</label>
+                <textarea id="alog-resp" readonly spellcheck="false" placeholder="—"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============================ 提示词管理 ============================ -->
+<main class="view" id="view-prompts">
+  <aside class="sidebar">
+    <div class="side-head"><span>全局模板</span><button id="btn-tpl-new">+ 新建</button></div>
+    <ul id="tpllist"></ul>
+  </aside>
+  <div class="splitter" data-split="side" title="拖动调整左侧宽度（双击恢复默认 280px）"></div>
+  <section class="content">
+    <div class="job-head">
+      <div>
+        <div class="job-name" id="tpl-title">提示词模板</div>
+        <div class="job-sub">保存在 prompts/ 目录，新建任务或修改任务时可选用</div>
+      </div>
+      <div class="job-actions">
+        <button class="primary" id="btn-tpl-save">保存模板</button>
+        <button id="btn-tpl-delete">删除模板</button>
+      </div>
+    </div>
+    <div class="tabpane">
+      <div class="field" style="margin-bottom:12px">
+        <label>模板文件名（.md）</label>
+        <input id="tpl-name">
+      </div>
+      <div class="prompt-block">
+        <div class="ph"><label>模板内容</label></div>
+        <textarea id="tpl-content" style="min-height:460px"></textarea>
+      </div>
+      <div class="hint-box">
+        两大类提示词：<b>reflect.md</b> 反思翻译主提示词（含 ${target_language}、${custom_prompt} 占位符），
+        <b>custom_prompt.md</b> 术语与用语习惯（会嵌入前者）。
+        内置的两个文件不允许删除，其余模板可以随意增删；建议按题材各存一份（如 custom_prompt.godot.md）。
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============================ Key 视图 ============================ -->
+<main class="view" id="view-keys">
+  <aside class="sidebar"><div class="side-head"><span>说明</span></div>
+    <div style="padding:12px;color:var(--muted);font-size:12px">
+      勾选左侧复选框后，<b>所有操作只作用于选中的行</b>。<br><br>
+      行内编辑：点「编辑」就地改 Key 或项目名，改完点「保存」，不想改点「取消」。<br>
+      新增：点「+ 新增一行」在表尾插入一条待填记录，取消即丢弃。<br><br>
+      <b>自动禁用规则</b>：429 返回体里带 quotaValue（配额上限值）时，说明该 Key 的额度真的用完了，
+      会自动把它置为「禁用」；没有 quotaValue 的 429 / 503 不会自动禁用。<br><br>
+      没有可用 Key 时，任务会自动停止（进度保留），在这里启用或新增 Key 后点「继续」即可。
+    </div>
+  </aside>
+  <div class="splitter" data-split="side" title="拖动调整左侧宽度（双击恢复默认 280px）"></div>
+  <section class="content keypane">
+    <div class="key-toolbar">
+      <label class="selall"><input type="checkbox" id="key-selall"> 全选</label>
+      <span id="key-selcount">已选 0 条</span>
+      <span class="spacer"></span>
+      <button id="btn-key-add">+ 增加API KEY</button>
+      <button data-bulk="enable">启用所选</button>
+      <button data-bulk="disable">禁用所选</button>
+      <button data-bulk="reset_usage">重置用量</button>
+      <button data-bulk="delete" class="danger">删除所选</button>
+    </div>
+    <div class="pairs-wrap">
+      <table class="pairs">
+        <thead><tr>
+          <th class="ck"></th><th>ID</th><th>API Key</th><th>项目名</th><th>用量</th><th>状态</th><th>操作</th>
+        </tr></thead>
+        <tbody id="keys-body"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- ============================ 日志 ============================ -->
+<div class="splitter horiz" data-split="log" title="拖动调整运行日志高度（双击恢复默认 200px）"></div>
+<section class="logpanel">
+  <div class="log-head"><span>运行日志</span><button id="btn-clearlog">清空</button></div>
+  <div id="logs"></div>
+</section>
+
+<!-- ============================ 新建任务 ============================ -->
+<div class="modal" id="modal-new" hidden>
+  <div class="modal-box">
+    <div class="modal-head"><span>新建翻译任务</span><button data-close="modal-new">关闭</button></div>
+    <div class="modal-body">
+      <div class="field" style="margin-bottom:12px">
+        <label>字幕文件</label>
+        <input type="file" id="new-srt-file" accept=".srt,.ass,.txt">
+        <div class="job-sub" id="new-srt-info">尚未选择文件</div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>引擎</label><select id="new-engine"></select></div>
+        <div class="field"><label>模型</label><select id="new-model"></select></div>
+        <div class="field"><label>翻译语言</label><input id="new-lang" list="lang-list2"><datalist id="lang-list2"></datalist></div>
+        <div class="field"><label>思考等级</label><select id="new-thinking"></select></div>
+        <div class="field"><label>每批条数</label><input id="new-batch" type="number"></div>
+        <div class="field"><label>主提示词模板</label><select id="new-reflect-tpl"></select></div>
+        <div class="field"><label>自定义样式模板</label><select id="new-custom-tpl"></select></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button data-close="modal-new">取消</button>
+      <button class="primary" id="btn-create">创建任务</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
