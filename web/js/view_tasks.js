@@ -161,10 +161,15 @@ export async function refreshJobs() {
   }
 
   const job = state.jobs.find((j) => j.id === state.current);
-  if (job && state.detail && state.detail.status !== job.status) {
-    state.detail.status = job.status;
-    updateProgress(job.progress);
-    updateDownloadButtons();
+  if (job && state.detail) {
+    // 进度条无条件跟列表走：运行中状态一直是 RUNNING，
+    // 只在「状态变了」时才更新的话，批次完成根本推不动进度条
+    state.detail.progress = job.progress || state.detail.progress;
+    updateProgress(state.detail.progress);
+    if (state.detail.status !== job.status) {
+      state.detail.status = job.status;
+      updateDownloadButtons();
+    }
   }
   updateStartButton();
 }
@@ -565,12 +570,17 @@ async function loadTemplateInto(selSel, targetSel) {
 
 /** 由 main.js 的统一定时器驱动：翻译记录跟随 + SSE 缺失时的兜底。 */
 export async function tick() {
-  if (state.alogBusy || !state.current || !isSubtab("apilogs")) return;
-  state.alogBusy = true;
-  try {
-    await loadApiLogs(true);
-  } finally {
-    state.alogBusy = false;
+  if (!state.current) return;
+
+  // 两路各自独立判断 —— 早期版本在这里用「不是 apilogs 页签就 return」挡住后面的
+  // pairsFallback，而后者又要求停在 pairs 页签，条件互斥导致兜底一次都没跑过
+  if (isSubtab("apilogs") && !state.alogBusy) {
+    state.alogBusy = true;
+    try {
+      await loadApiLogs(true);
+    } finally {
+      state.alogBusy = false;
+    }
   }
   await pairsFallback();
 }
