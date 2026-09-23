@@ -68,7 +68,6 @@
 
       <div class="tabpane" id="tab-params" hidden>
         <div class="form-grid">
-          <div class="field"><label>引擎</label><select id="p-engine"></select></div>
           <div class="field"><label>模型</label><select id="p-model"></select></div>
           <div class="field"><label>翻译语言</label><input id="p-lang" list="lang-list"><datalist id="lang-list"></datalist></div>
           <div class="field"><label>思考等级 thinking（随模型自动连动）</label><select id="p-thinking"></select></div>
@@ -258,7 +257,6 @@
         <div class="job-sub" id="new-srt-info">尚未选择文件</div>
       </div>
       <div class="form-grid">
-        <div class="field"><label>引擎</label><select id="new-engine"></select></div>
         <div class="field"><label>模型</label><select id="new-model"></select></div>
         <div class="field"><label>翻译语言</label><input id="new-lang" list="lang-list2"><datalist id="lang-list2"></datalist></div>
         <div class="field"><label>思考等级</label><select id="new-thinking"></select></div>
@@ -274,6 +272,6 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

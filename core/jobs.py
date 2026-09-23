@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -508,11 +509,13 @@ def trash_job(db_path: str | Path, log_dir: str | Path | None = None) -> Path:
     if dest.exists():
         dest = trash / f"{src.stem}_{stamp}{src.suffix}"
 
-    src.replace(dest)
+    # Windows 上刚写完的文件常被杀软 / 索引器短暂抓着，直接挪会报 WinError 32。
+    # 这不是我们的句柄泄漏（连接都是用完即关），所以重试几拍即可。
+    _replace_with_retry(src, dest)
     for suffix in ("-wal", "-shm"):
         side = Path(str(src) + suffix)
         if side.exists():
-            side.replace(Path(str(dest) + suffix))
+            _replace_with_retry(side, Path(str(dest) + suffix))
 
     # 同名附属目录（产物 log/<任务名>/output）也一并挪走
     folder = src.parent / src.stem
@@ -520,6 +523,20 @@ def trash_job(db_path: str | Path, log_dir: str | Path | None = None) -> Path:
         dest_folder = trash / folder.name
         if dest_folder.exists():
             dest_folder = trash / f"{folder.name}_{stamp}"
-        folder.replace(dest_folder)
+            _replace_with_retry(folder, dest_folder)
+        else:
+            _replace_with_retry(folder, dest_folder)
 
     return dest
+
+
+def _replace_with_retry(src: Path, dest: Path, tries: int = 6, wait: float = 0.25) -> None:
+    """os.replace 的 Windows 兜底：遇到「文件被占用」重试几拍再放弃。"""
+    for i in range(tries):
+        try:
+            src.replace(dest)
+            return
+        except OSError:
+            if i == tries - 1:
+                raise
+            time.sleep(wait)
