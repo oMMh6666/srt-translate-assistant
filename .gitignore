@@ -19,7 +19,9 @@ log/*
 prompts/custom_prompt.*.md
 !prompts/custom_prompt.md
 
-# --- 临时 / 无关目录 ---
+# --- 临时草稿（可随时删，不进仓库）---
+# 注意：冒烟脚本在 tests/ 下、是**进版本库**的，别放这里 ——
+# 之前放在 Tmp/ 被当成草稿清掉过一次，回归验证能力整个没了。
 docs/
 input/
 Tmp/

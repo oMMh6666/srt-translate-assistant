@@ -36,7 +36,7 @@ python -m venv .venv
 | 重试策略 | **无最大重试上限**：批次未完成就一直重试到完成为止（失败退避 2s→60s）；单次请求超过「请求超时」（默认 600s，可配）判定为服务端卡死，换 Key 重试；三种情况会停下：暂停、致命错误、**没有可用 Key**，进度一律落库 |
 | 无可用 API Key 自动停止 | 启动时或批次取 Key 时发现没有可用 Key，任务立刻停止（状态 `NO_KEY`）并说明原因；顶栏「开始」按钮在无可用 Key 时置灰，启动接口也会直接拒绝 |
 | 执行可见性 | 每次请求前后都打日志（Key 脱敏、输入字符数、响应耗时），等待响应期间每 30s 汇报一次，不会再出现「看起来卡住」；任务线程若意外崩溃会写入 `service.log` 并在界面提示 |
-| 日志完整度 | `api_logs` 存**全量**请求与响应（跟旧脚本 legacy/utils 的 `format_full_request_payload` + `response.model_dump()` 一个量级）：1027 条字幕的剧集，单批请求约 41KB（含全文 33KB + 提示词 5.6KB），响应约 7KB；`Tmp/logpeek.py` 可列出/导出某批次的完整内容 |
+| 日志完整度 | `api_logs` 存**全量**请求与响应（跟旧脚本 legacy/utils 的 `format_full_request_payload` + `response.model_dump()` 一个量级）：1027 条字幕的剧集，单批请求约 41KB（含全文 33KB + 提示词 5.6KB），响应约 7KB；`tests/logpeek.py` 可列出/导出某批次的完整内容 |
 | 提示词随任务走 | `prompt_files` 表存两条记录：**system_prompt**（反思翻译主提示词）与 **customer_prompt**（自定义样式/术语，嵌入前者的 ${custom_prompt}）；是任务的参数值，只进库不落 md 文件；「提示词管理」页维护全局模板供新建/修改任务时选用 |
 | Gemini官方库调用 | `core/engine.py`：**只保留 Gemini 官方 SDK `google-genai`**，走原生强结构：`response_mime_type="application/json"` + `response_schema=genai.types.Schema`（字段带 description、required，并按声明顺序给 `property_ordering`）。模块是无状态函数（`generate_json` / `to_gemini_schema` / `dump_response`），Translator 只认「给入参、拿 Generation」这一件事，不感知 SDK |
 | 漏句校验 | 返回缺 ID 自动带纠错上下文重发 |
@@ -68,7 +68,8 @@ web/     前端（原生 ES modules，暗色；任务 / 提示词管理 / API Ke
 prompts/ 全局模板（reflect.md custom_prompt*.md，仅模板，每一项的任务提示词会保存在对应的任务里）
 input/   浏览器上传的字幕暂存（创建任务即逐条入库，之后可删）
 log/     任务库（每个任务一个 db），删掉的任务进 log/.trash/
-Tmp/     冒烟脚本（smoke_refactor / smoke_pipeline / smoke_ui）
+tests/   冒烟脚本（进版本库；smoke_refactor / smoke_pipeline / smoke_ui / smoke_progress）
+Tmp/     随手写的临时草稿（gitignore，可随时删）
 ```
 
 分层约定（越往下越底层）：
@@ -117,19 +118,30 @@ Tmp/     冒烟脚本（smoke_refactor / smoke_pipeline / smoke_ui）
 - 断线重连走浏览器原生 `Last-Event-ID`（也支持 `?last=`）：服务端从缓冲补发那段事件，页面**不必整页重拉**
 - 缓冲已被挤出（`last_seq < oldest_seq`）时先补一帧提示，告知界面可能落后于实际进度
 - 空闲 15s 发一帧 `: heartbeat` 注释帧保活；首帧 `retry: 3000` 指定重连间隔
-- 界面**不依赖** SSE 也能跟得上（另有 2.5s 轮询兜底），SSE 只是加速器；服务重启过、任务在别的会话里启动也一样更新
+- 界面**不依赖** SSE 也能跟得上（另有 5s 轮询兜底），SSE 只是加速器；服务重启过、任务在别的会话里启动也一样更新
 
 ## 冒烟验收
 
-不引入 pytest，改动后跑 `Tmp/` 下三个脚本（各自自带起停服务，不碰真实 Key 数据）：
+不引入 pytest。改完跑一遍 `tests/` 下的脚本（**脚本本身在版本库里**，
+`Tmp/` 只放随手写的草稿）：
 
 ```
-.venv\Scripts\python.exe Tmp/smoke_refactor.py   # 分层 / 接口收敛 / 死代码是否已清（36 项）
-.venv\Scripts\python.exe Tmp/smoke_pipeline.py   # 建任务→跑批→暂停→续跑→导出→SSE 断线重连（25 项）
-.venv\Scripts\python.exe Tmp/smoke_ui.py         # 真起服务 + 无头 Chrome 点一遍界面（25 项）
-.venv\Scripts\python.exe Tmp/smoke_progress.py   # 进度条专项：假引擎真服务跑完整轮，看它是否一批一跳（10 项）
+.venv\Scripts\python.exe tests/run_all.py        # 四个套件一起跑
 ```
 
-`smoke_progress.py` 走 `Tmp/progress_server.py`（引擎假的、服务与前端全真，Key 库与 log 目录都落在临时目录），
-专治「跑完了界面却不动」这类只有真跑一遍才看得出来的问题。
+| 脚本 | 干什么 | 项数 |
+|---|---|---|
+| `tests/smoke_refactor.py` | 分层是否守住 / 废弃设计是否清干净 / 核心契约是否成立 | 58 |
+| `tests/smoke_pipeline.py` | 建任务→跑批→暂停→续跑→导出→SSE 断线重连 | 51 |
+| `tests/smoke_ui.py` | 真起服务 + 无头 Chrome 点一遍界面 | 38 |
+| `tests/smoke_progress.py` | 进度条专项：SSE 正常 / 掐断 SSE 也要走到 100% | 15 |
+
+三条铁律（踩过坑才定的）：
+
+1. **一律临时目录** —— `Key 库 / log / input` 全部指到 tempdir，绝不碰 `api_keys/` 的真实 Key 和 `log/` 的真实任务
+2. **一律假引擎** —— `tests/_harness.py` 的 `FakeEngine` 换掉 `core.engine.generate_json`，一个字节都不发给真实 API
+3. **自带起停服务** —— `tests/fake_server.py` 是「假引擎 + 真服务」的子进程，跑完自己收干净
+
+`smoke_progress.py` 专治「跑完了界面却不动」这类只有真跑一遍才看得出来的问题 ——
+进度条那个「条件互斥导致兜底从不执行」的 bug 就是这么抓出来的。
 
