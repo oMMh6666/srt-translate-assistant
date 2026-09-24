@@ -20,6 +20,22 @@ from core import config as CFG
 from core.models import KNOWN_MODELS, default_thinking_level, thinking_levels_for
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """前端静态资源一律不缓存。
+
+    这是本地工具，改完 css/js 就想立刻看到效果。默认的 StaticFiles 不带
+    Cache-Control，浏览器会把旧文件缓存住 —— 按 F5 只重新验证主文档，
+    css/js 仍走缓存，看起来就是「改了没生效」，非得 Ctrl+F5 才行。
+
+    只管静态文件，API 响应不受影响。
+    """
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 class UploadSrt(BaseModel):
     filename: str
     content: str
@@ -69,7 +85,7 @@ def create_app() -> FastAPI:
         """避免浏览器请求图标时打出一条 404 噪音。"""
         return Response(status_code=204)
 
-    app.mount("/", StaticFiles(directory=str(deps.WEB_DIR), html=True), name="web")
+    app.mount("/", NoCacheStaticFiles(directory=str(deps.WEB_DIR), html=True), name="web")
     return app
 
 
