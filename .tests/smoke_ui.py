@@ -1,12 +1,12 @@
 """界面冒烟：真起服务 + 无头 Chrome 真点一遍界面。
 
 服务是真的（FastAPI + 真路由 + 真 SSE），浏览器是真的（本机 Chrome，无头），
-只有**引擎是假的** —— 由 tests/fake_server.py 提供，不打真实 API，
+只有**引擎是假的** —— 由 .tests/fake_server.py 提供，不打真实 API，
 Key 库和 log 目录全在临时目录里，一个字节都不碰你的真实数据。
 
 这个是防「跑完了界面却不动」这类只有真跑一遍才看得出来的问题。
 
-    .venv\\Scripts\\python.exe tests/smoke_ui.py
+    .venv\\Scripts\\python.exe .tests/smoke_ui.py
 """
 
 from __future__ import annotations
@@ -18,11 +18,12 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # .tests 不是合法包名，直接按目录导入
 
 import requests  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from tests._harness import (  # noqa: E402
+from _harness import (  # noqa: E402
     Report,
     free_port,
     make_srt,

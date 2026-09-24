@@ -4,7 +4,7 @@
 但 FastAPI 路由、SSE 广播、前端页面、浏览器全是真的 ——
 只有这样才能测出「跑完了界面却不动」这类光读代码看不出来的问题。
 
-    python tests/fake_server.py --port 8899 --delay 0.8
+    python .tests/fake_server.py --port 8899 --delay 0.8
 """
 
 from __future__ import annotations
@@ -16,8 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # .tests 不是合法包名，直接按目录导入
 
-from tests._harness import FakeEngine, isolate  # noqa: E402
+from _harness import FakeEngine, isolate  # noqa: E402
 
 
 def main() -> int:

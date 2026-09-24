@@ -7,7 +7,7 @@ SSE 那一节直接驱动 `job_events` 端点函数（用一个带 Last-Event-ID
 配合 GatedEngine 逐批放行，时序完全可控、结果确定 ——
 靠真浏览器去撞时序只会得到一堆随机失败。
 
-    .venv\\Scripts\\python.exe tests/smoke_pipeline.py
+    .venv\\Scripts\\python.exe .tests/smoke_pipeline.py
 """
 
 from __future__ import annotations
@@ -20,8 +20,9 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # .tests 不是合法包名，直接按目录导入
 
-from tests._harness import (  # noqa: E402
+from _harness import (  # noqa: E402
     FakeEngine,
     Report,
     StreamReader,

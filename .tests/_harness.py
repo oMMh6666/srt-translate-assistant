@@ -191,7 +191,7 @@ def free_port() -> int:
 
 
 def spawn_server(port: int, tmp: Path, delay: float = 0.0, wait: float = 30.0):
-    """起一个「假引擎 + 真服务」的子进程（tests/fake_server.py）。
+    """起一个「假引擎 + 真服务」的子进程（.tests/fake_server.py）。
 
     用子进程而不是线程：uvicorn 的 `capture_signals` 在非主线程里装不了信号处理器。
     """

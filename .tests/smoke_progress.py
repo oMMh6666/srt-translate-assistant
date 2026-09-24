@@ -10,7 +10,7 @@
 
 引擎假的（每批故意慢 2 秒），服务 / SSE / 前端 / 浏览器全是真的。
 
-    .venv\\Scripts\\python.exe tests/smoke_progress.py
+    .venv\\Scripts\\python.exe .tests/smoke_progress.py
 """
 
 from __future__ import annotations
@@ -24,10 +24,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # .tests 不是合法包名，直接按目录导入
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from tests._harness import (  # noqa: E402
+from _harness import (  # noqa: E402
     Report,
     free_port,
     make_srt,

@@ -3,9 +3,9 @@
 日志是全量落的（完整 system_instruction + 每一轮 contents + SDK 原始响应），
 单批请求动辄几十 KB，界面上看不全 —— 这个脚本直接从任务库里读出来。
 
-    .venv\\Scripts\\python.exe tests/logpeek.py <任务库路径 或 log 下的任务名>
-    .venv\\Scripts\\python.exe tests/logpeek.py LawE05 --batch 3
-    .venv\\Scripts\\python.exe tests/logpeek.py LawE05 --batch 3 --out batch3.json
+    .venv\\Scripts\\python.exe .tests/logpeek.py <任务库路径 或 log 下的任务名>
+    .venv\\Scripts\\python.exe .tests/logpeek.py LawE05 --batch 3
+    .venv\\Scripts\\python.exe .tests/logpeek.py LawE05 --batch 3 --out batch3.json
 
 只读，不改任务库。
 """

@@ -3,7 +3,7 @@
 不发请求、不起服务、不碰真实数据 —— 只读源码 + 在临时目录里验证核心类的行为。
 这是重构后的第一道闸门：结构塌了，后面跑得再顺也是白搭。
 
-    .venv\\Scripts\\python.exe tests/smoke_refactor.py
+    .venv\\Scripts\\python.exe .tests/smoke_refactor.py
 """
 
 from __future__ import annotations
@@ -16,10 +16,11 @@ import tempfile
 import threading
 from pathlib import Path
 
-# 直接跑脚本时 sys.path[0] 是 tests/，先把项目根塞进去才 import 得到 tests._harness
+# 直接跑脚本时 sys.path[0] 是 .tests/，先把项目根塞进去才 import 得到 _harness
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # .tests 不是合法包名，直接按目录导入
 
-from tests._harness import ROOT, Report, isolate, make_srt  # noqa: E402
+from _harness import ROOT, Report, isolate, make_srt  # noqa: E402
 
 CODE_SUFFIX = (".py", ".js", ".html", ".css")
 CODE_DIRS = ("core", "app", "web")
@@ -30,7 +31,7 @@ def read(rel: str) -> str:
 
 
 def grep_project(pattern: str) -> list[str]:
-    """在项目代码里找pattern（不含 tests/、Tmp/、docs/、History.md）。"""
+    """在项目代码里找pattern（不含 .tests/、.tmp/、.docs/、History.md）。"""
     hits = []
     rx = re.compile(pattern)
     for d in CODE_DIRS:

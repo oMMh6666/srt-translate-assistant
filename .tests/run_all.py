@@ -1,6 +1,6 @@
 """一键跑全部冒烟。
 
-    .venv\\Scripts\\python.exe tests/run_all.py
+    .venv\\Scripts\\python.exe .tests/run_all.py
 
 四个脚本各自自带起停服务、全部落临时目录，不碰真实 Key 与真实任务。
 """
