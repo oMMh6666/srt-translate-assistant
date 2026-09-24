@@ -10,7 +10,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-echo Starting subtitle workbench at http://127.0.0.1:8777/
+echo Starting subtitle workbench at http://127.0.0.1:8778/
 ".venv\Scripts\python.exe" run.py
 
 pause

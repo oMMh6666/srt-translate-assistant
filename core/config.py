@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PORT = 8777
+PORT = 8778
 
 DEFAULT_CONFIG: dict = {
     "MODEL_NAME": "gemini-3.5-flash-lite",

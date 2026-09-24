@@ -22,7 +22,6 @@ prompts/custom_prompt.*.md
 # --- 临时 / 无关目录 ---
 docs/
 input/
-tests/
 Tmp/
 
 # --- 记录文件 ---
