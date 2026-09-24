@@ -96,9 +96,10 @@ function keyRow(k) {
   const tr = document.createElement("tr");
   const checked = state.keyChecked.has(k.id) ? "checked" : "";
   const ck = `<td><input type="checkbox" data-ck="${k.id}" ${checked}></td>`;
+  const off = k.is_active ? "" : " key-off";   // 停用的 Key：Key 与项目名加删除线
 
   if (state.keyEditId === k.id) {
-    tr.className = "editing";
+    tr.className = "editing" + off;
     tr.innerHTML = `${ck}<td>${k.id}</td>
       <td><input class="k-in wide" data-f="api_key" value="${escapeHtml(k.api_key)}"></td>
       <td><input class="k-in" data-f="project_name" value="${escapeHtml(k.project_name)}"></td>
@@ -106,9 +107,10 @@ function keyRow(k) {
       <td>${k.is_active ? "启用" : "禁用"}</td>
       <td><button data-save="${k.id}">保存</button><button data-cancel="row">取消</button></td>`;
   } else {
+    tr.className = off.trim();
     tr.innerHTML = `${ck}<td>${k.id}</td>
       <td class="mono" title="${escapeHtml(k.api_key)}">${escapeHtml(k.api_key_masked)}</td>
-      <td>${escapeHtml(k.project_name)}</td>
+      <td class="pname">${escapeHtml(k.project_name)}</td>
       <td>${k.usage_count}</td>
       <td>${k.is_active ? '<span class="tag-on">启用</span>' : '<span class="tag-off">禁用</span>'}</td>
       <td><button data-edit="${k.id}">编辑</button><button data-del="${k.id}">删除</button></td>`;

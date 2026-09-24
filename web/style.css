@@ -352,3 +352,14 @@ input.k-in { padding: 4px 6px; font-size: 12px; }
 input.k-in.wide { font-family: Consolas, monospace; }
 .tag-on { color: var(--ok); }
 .tag-off { color: var(--muted); }
+
+/* 被停用的 Key（手动禁用 或 429 quotaValue 自动停用）：
+   Key 与项目名加删除线并淡化 —— 光看「禁用」小标签太不显眼。
+   只划这两列：ID / 用量是数据，状态标签是「为什么这样」的说明，按钮还要点。 */
+#keys-body tr.key-off td.mono,
+#keys-body tr.key-off td.pname {
+  text-decoration: line-through;
+  text-decoration-color: #ff9c96;
+  text-decoration-thickness: 1px;
+  color: var(--muted);
+}
