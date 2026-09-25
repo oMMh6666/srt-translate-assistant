@@ -73,7 +73,7 @@ log/     任务库（每个任务一个 db），删掉的任务进 log/.trash/
 **目录命名约定**：不带点 = 跑项目用得着；`.` 前缀 = 与运行无关，本地自用、随时可删。
 
 ```
-.tests/  冒烟脚本（**. 前缀但照样进版本库** —— 以前放 Tmp/ 被当草稿清掉过一次）
+.tests/  冒烟脚本（**只在本地，不进仓库**；跑法见「冒烟验收」）
          四个套件：smoke_refactor / smoke_pipeline / smoke_ui / smoke_progress
 .docs/   本地设计文档（重构方案、分层约定，不进仓库）
 .tmp/    随手写的草稿 + 测试残留（gitignore，随时可删）
@@ -129,8 +129,8 @@ log/     任务库（每个任务一个 db），删掉的任务进 log/.trash/
 
 ## 冒烟验收
 
-不引入 pytest。改完跑一遍 `.tests/` 下的脚本（**脚本本身在版本库里**，
-`.tmp/` 只放随手写的草稿）：
+不引入 pytest。改完跑一遍 `.tests/` 下的脚本（**脚本只在本地、不进仓库**，
+清掉就没了，别动）：
 
 ```
 .venv\Scripts\python.exe .tests/run_all.py        # 四个套件一起跑
